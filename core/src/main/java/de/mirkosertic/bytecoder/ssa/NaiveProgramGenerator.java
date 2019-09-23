@@ -325,7 +325,31 @@ public final class NaiveProgramGenerator implements ProgramGenerator {
                 theLiveIn.getPorts().forEach((d, value) -> {
                     for (final RegionNode thePred : theNode.getPredecessors()) {
                         final ParsingHelper theHelper = theParsingHelperCache.resolveFinalStateForNode(thePred);
-                        theHelper.requestValue(d);
+                        final Value theValue = theHelper.requestValue(d);
+                        if (value instanceof PHIValue) {
+                            final PHIValue thePhi = (PHIValue) value;
+                            //thePhi.receivesDataFrom(theValue);
+                        }
+                    }
+                });
+            }
+
+            // Finally, we have to insert phi copy where a synthetic variable is passed to a phi value
+            // this has to be done or else the register allocator will not get the relationship
+            for (final RegionNode theNode : theGraphDominators.getPreOrder()) {
+                final BlockState theLiveOut = theNode.liveOut();
+                final Set<RegionNode> theSuccessors = theNode.outgoingEdges().map(Edge::targetNode).collect(Collectors.toSet());
+                theLiveOut.getPorts().forEach((description, value) -> {
+                    // We have to check the successors
+                    for (final RegionNode theSuccessor : theSuccessors) {
+                        final BlockState theLiveIn = theSuccessor.liveIn();
+                        final Value theInValue = theLiveIn.getPorts().get(description);
+                        if ((theInValue instanceof PHIValue) && (theInValue != value)) {
+                            // We found something
+                            // Now we have to insert the copy instructions right before the goto blocks
+                            // For every node that jumps to the target
+                            insertPHICopyInstructions(theProgram, theNode.getExpressions(), theSuccessor, value, (PHIValue) theInValue);
+                        }
                     }
                 });
             }
@@ -335,6 +359,23 @@ public final class NaiveProgramGenerator implements ProgramGenerator {
         }
 
         return theProgram;
+    }
+
+    private void insertPHICopyInstructions(final Program aProgram, final ExpressionList aExpresionList, final RegionNode aJumpTarget, final Value aSource, final PHIValue aTarget) {
+        for (final Expression e : aExpresionList.toList()) {
+            if (e instanceof ExpressionListContainer) {
+                final ExpressionListContainer c = (ExpressionListContainer) e;
+                for (final ExpressionList l : c.getExpressionLists()) {
+                    insertPHICopyInstructions(aProgram, l, aJumpTarget, aSource, aTarget);
+                }
+            } else if (e instanceof GotoExpression) {
+                final GotoExpression theGoto = (GotoExpression) e;
+                if (theGoto.jumpTarget().equals(aJumpTarget.getStartAddress())) {
+                    final PHIAssignmentExpression theAssignment = new PHIAssignmentExpression(aProgram, theGoto.getAddress(), aTarget, aSource);
+                    aExpresionList.addBefore(theAssignment, theGoto);
+                }
+            }
+        }
     }
 
     private void initializeBlock(

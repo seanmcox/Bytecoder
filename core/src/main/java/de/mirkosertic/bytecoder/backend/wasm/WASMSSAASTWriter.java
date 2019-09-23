@@ -102,6 +102,7 @@ import de.mirkosertic.bytecoder.ssa.NewMultiArrayExpression;
 import de.mirkosertic.bytecoder.ssa.NewObjectAndConstructExpression;
 import de.mirkosertic.bytecoder.ssa.NewObjectExpression;
 import de.mirkosertic.bytecoder.ssa.NullValue;
+import de.mirkosertic.bytecoder.ssa.PHIAssignmentExpression;
 import de.mirkosertic.bytecoder.ssa.PHIValue;
 import de.mirkosertic.bytecoder.ssa.Program;
 import de.mirkosertic.bytecoder.ssa.PutFieldExpression;
@@ -321,6 +322,10 @@ public class WASMSSAASTWriter {
         }
         if (aExpression instanceof VariableAssignmentExpression) {
             generateInitVariableExpression((VariableAssignmentExpression) aExpression);
+            return;
+        }
+        if (aExpression instanceof PHIAssignmentExpression) {
+            generatePHIAssignmentExpression((PHIAssignmentExpression) aExpression);
             return;
         }
         if (aExpression instanceof DirectInvokeMethodExpression) {
@@ -652,6 +657,33 @@ public class WASMSSAASTWriter {
             }
         } else {
             flow.setLocal(theLocal, toValue(theNewValue), aExpression);
+        }
+    }
+
+    private void generatePHIAssignmentExpression(final PHIAssignmentExpression aExpression) {
+        final Variable v = allocator.variableAssignmentFor(aExpression.getPhi());
+        if (!v.isSynthetic()) {
+            final Register r = allocator.registerAssignmentFor(v);
+            final Local theLocal = function.localByLabel(registerName(r));
+            final Value theNewValue = aExpression.incomingDataFlows().get(0);
+
+            if (isStackVariable(v)) {
+                final Local sp = function.localByLabel(SP);
+                final int theOffset = stackOffsetFor(v);
+                switch (v.resolveType().resolve()) {
+                case DOUBLE:
+                case FLOAT: {
+                    flow.f32.store(theOffset, getLocal(sp, aExpression), teeLocal(theLocal, toValue(theNewValue), aExpression), aExpression);
+                    break;
+                }
+                default: {
+                    flow.i32.store(theOffset, getLocal(sp, aExpression), teeLocal(theLocal, toValue(theNewValue), aExpression), aExpression);
+                    break;
+                }
+                }
+            } else {
+                flow.setLocal(theLocal, toValue(theNewValue), aExpression);
+            }
         }
     }
 
@@ -1069,7 +1101,7 @@ public class WASMSSAASTWriter {
             }
         }
 
-        if (!(theClasses.stream().noneMatch(BytecodeLinkedClass::isOpaqueType))) {
+        if (theClasses.stream().anyMatch(BytecodeLinkedClass::isOpaqueType)) {
             throw new IllegalStateException("There seems to be some confusion here, either multiple OpaqueTypes with method named \"" + aValue.getMethodName() + "\" or mix of Opaque and Non-Opaque virtual invocations in class list " + theClasses);
         }
 

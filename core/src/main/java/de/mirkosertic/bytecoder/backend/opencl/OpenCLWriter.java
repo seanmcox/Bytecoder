@@ -51,6 +51,7 @@ import de.mirkosertic.bytecoder.ssa.InvokeStaticMethodExpression;
 import de.mirkosertic.bytecoder.ssa.InvokeVirtualMethodExpression;
 import de.mirkosertic.bytecoder.ssa.Label;
 import de.mirkosertic.bytecoder.ssa.LongValue;
+import de.mirkosertic.bytecoder.ssa.PHIAssignmentExpression;
 import de.mirkosertic.bytecoder.ssa.PHIValue;
 import de.mirkosertic.bytecoder.ssa.Program;
 import de.mirkosertic.bytecoder.ssa.PutFieldExpression;
@@ -399,6 +400,16 @@ public class OpenCLWriter extends IndentSSAWriter {
             withDeeperIndent().writeExpressions(theE.getElsePart());
 
             println("}");
+        } else if (expression instanceof PHIAssignmentExpression) {
+            final PHIAssignmentExpression thePHI = (PHIAssignmentExpression) expression;
+            final Variable v = allocator.variableAssignmentFor(thePHI.getPhi());
+            if (!v.isSynthetic()) {
+                final Register r = allocator.registerAssignmentFor(v);
+                print(registerName(r));
+                print("=");
+                printValue(thePHI.incomingDataFlows().get(0));
+                println(";");
+            }
         } else {
             throw new IllegalArgumentException("Not supported. " + expression);
         }

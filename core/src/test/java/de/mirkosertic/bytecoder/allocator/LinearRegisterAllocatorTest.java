@@ -40,6 +40,9 @@ import de.mirkosertic.bytecoder.ssa.Variable;
 import de.mirkosertic.bytecoder.stackifier.HeadToHeadControlFlowException;
 import de.mirkosertic.bytecoder.stackifier.Stackifier;
 import de.mirkosertic.bytecoder.unittest.Slf4JLogger;
+import org.jbox2d.dynamics.Body;
+import org.jbox2d.dynamics.Fixture;
+import org.jbox2d.dynamics.FixtureDef;
 import org.junit.Test;
 
 import java.io.StringWriter;
@@ -70,29 +73,29 @@ public class LinearRegisterAllocatorTest {
             System.out.println(String.format("%s Def at %d, LastUsedAt %d", v.getName(), v.liveRange().getDefinedAt(), v.liveRange().getLastUsedAt()));
         }
 
-        assertEquals(9, vars.size());
+        assertEquals(5, vars.size());
 
         assertEquals("var0", vars.get(0).getName());
-        assertEquals(0, vars.get(0).liveRange().getDefinedAt());
-        assertEquals(0, vars.get(0).liveRange().getLastUsedAt());
+        assertEquals(2, vars.get(0).liveRange().getDefinedAt());
+        assertEquals(4, vars.get(0).liveRange().getLastUsedAt());
 
         assertEquals("var1", vars.get(1).getName());
-        assertEquals(0, vars.get(1).liveRange().getDefinedAt());
-        assertEquals(1, vars.get(1).liveRange().getLastUsedAt());
+        assertEquals(3, vars.get(1).liveRange().getDefinedAt());
+        assertEquals(4, vars.get(1).liveRange().getLastUsedAt());
 
         assertEquals("var2", vars.get(2).getName());
-        assertEquals(0, vars.get(2).liveRange().getDefinedAt());
-        assertEquals(2, vars.get(2).liveRange().getLastUsedAt());
+        assertEquals(4, vars.get(2).liveRange().getDefinedAt());
+        assertEquals(5, vars.get(2).liveRange().getLastUsedAt());
 
         assertEquals("var3", vars.get(3).getName());
-        assertEquals(1, vars.get(3).liveRange().getDefinedAt());
-        assertEquals(2, vars.get(3).liveRange().getLastUsedAt());
+        assertEquals(5, vars.get(3).liveRange().getDefinedAt());
+        assertEquals(6, vars.get(3).liveRange().getLastUsedAt());
 
         assertEquals("var4", vars.get(4).getName());
-        assertEquals(2, vars.get(4).liveRange().getDefinedAt());
-        assertEquals(4, vars.get(4).liveRange().getLastUsedAt());
+        assertEquals(6, vars.get(4).liveRange().getDefinedAt());
+        assertEquals(7, vars.get(4).liveRange().getLastUsedAt());
 
-        final AbstractAllocator theAllocator = Allocator.linear.allocate(p, t -> t.resolveType(), theLinkerContext);
+        final AbstractAllocator theAllocator = Allocator.linear.allocate(p, Variable::resolveType, theLinkerContext);
         assertEquals(Collections.singleton(TypeRef.Native.INT), theAllocator.usedRegisterTypes());
         assertEquals(3L, theAllocator.registersOfType(TypeRef.Native.INT).size());
         assertEquals(0L, theAllocator.registerAssignmentFor(vars.get(0)).getNumber());
@@ -120,16 +123,55 @@ public class LinearRegisterAllocatorTest {
 
         final List<Variable> vars = p.getVariables();
 
-        assertEquals(19, vars.size());
+        assertEquals(14, vars.size());
 
-        final AbstractAllocator theAllocator = Allocator.linear.allocate(p, t -> t.resolveType(), theLinkerContext);
+        final AbstractAllocator theAllocator = Allocator.linear.allocate(p, Variable::resolveType, theLinkerContext);
         for (final Variable v : vars) {
             System.out.println(String.format("%s Def at %d, LastUsedAt %d assigned to register %d", v.getName(), v.liveRange().getDefinedAt(), v.liveRange().getLastUsedAt(), theAllocator.registerAssignmentFor(v).getNumber()));
         }
 
-        assertEquals(10, theAllocator.assignedRegister().size());
+        assertEquals(7, theAllocator.assignedRegister().size());
 
         final CompileOptions theOptions = new CompileOptions(new Slf4JLogger(), true, KnownOptimizer.NONE, false, "ks", 100, 100, false, true, Allocator.passthru);
+        final JSMinifier theMinifier = new JSMinifier(theOptions);
+        final SourceMapWriter theSourcemapWriter = new SourceMapWriter();
+        final StringWriter theWriter = new StringWriter();
+        final JSPrintWriter theJSWriter = new JSPrintWriter(theWriter, theMinifier, theSourcemapWriter);
+        final ConstantPool thePool = new ConstantPool();
+        final JSSSAWriter theVariablesWriter = new JSSSAWriter(theOptions, p, 2, theJSWriter, theLinkerContext, thePool, false, theMinifier, theAllocator);
+        theVariablesWriter.printRegisterDeclarations();
+
+        final Stackifier stackifier = new Stackifier(p.getControlFlowGraph());
+        theVariablesWriter.printStackified(stackifier);
+
+        System.out.println(theWriter);
+    }
+
+    @Test
+    public void testFixtureCreate() throws HeadToHeadControlFlowException {
+        final BytecodeLinkerContext theLinkerContext = new BytecodeLinkerContext(new BytecodeLoader(getClass().getClassLoader()), new Slf4JLogger());
+        final ProgramGenerator theGenerator = NaiveProgramGenerator.FACTORY.createFor(theLinkerContext, new JSIntrinsics());
+        final BytecodeLinkedClass theLinkedClass = theLinkerContext.resolveClass(BytecodeObjectTypeRef.fromRuntimeClass(
+                Fixture.class));
+        theLinkedClass.resolveVirtualMethod("create", new BytecodeMethodSignature(BytecodePrimitiveTypeRef.VOID, new BytecodeTypeRef[]{BytecodeObjectTypeRef.fromRuntimeClass(
+                Body.class), BytecodeObjectTypeRef.fromRuntimeClass(FixtureDef.class)}));
+
+        final BytecodeMethod theMethod = theLinkedClass.getBytecodeClass().methodByNameAndSignatureOrNull("create", new BytecodeMethodSignature(BytecodePrimitiveTypeRef.VOID, new BytecodeTypeRef[]{BytecodeObjectTypeRef.fromRuntimeClass(
+                Body.class), BytecodeObjectTypeRef.fromRuntimeClass(FixtureDef.class)}));
+        final Program p = theGenerator.generateFrom(theLinkedClass.getBytecodeClass(), theMethod);
+
+        final List<Variable> vars = p.getVariables();
+
+        assertEquals(84, vars.size());
+
+        final AbstractAllocator theAllocator = Allocator.linear.allocate(p, Variable::resolveType, theLinkerContext);
+        for (final Variable v : vars) {
+            System.out.println(String.format("%s Def at %d, LastUsedAt %d assigned to register %d", v.getName(), v.liveRange().getDefinedAt(), v.liveRange().getLastUsedAt(), theAllocator.registerAssignmentFor(v).getNumber()));
+        }
+
+        assertEquals(36, theAllocator.assignedRegister().size());
+
+        final CompileOptions theOptions = new CompileOptions(new Slf4JLogger(), true, KnownOptimizer.NONE, false, "ks", 100, 100, false, true, Allocator.linear);
         final JSMinifier theMinifier = new JSMinifier(theOptions);
         final SourceMapWriter theSourcemapWriter = new SourceMapWriter();
         final StringWriter theWriter = new StringWriter();

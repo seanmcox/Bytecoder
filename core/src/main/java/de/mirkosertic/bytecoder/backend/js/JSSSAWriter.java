@@ -87,6 +87,7 @@ import de.mirkosertic.bytecoder.ssa.NewMultiArrayExpression;
 import de.mirkosertic.bytecoder.ssa.NewObjectAndConstructExpression;
 import de.mirkosertic.bytecoder.ssa.NewObjectExpression;
 import de.mirkosertic.bytecoder.ssa.NullValue;
+import de.mirkosertic.bytecoder.ssa.PHIAssignmentExpression;
 import de.mirkosertic.bytecoder.ssa.PHIValue;
 import de.mirkosertic.bytecoder.ssa.Program;
 import de.mirkosertic.bytecoder.ssa.PutFieldExpression;
@@ -1379,6 +1380,19 @@ public class JSSSAWriter {
             final JSSSAWriter theDeeper = withDeeperIndent();
             theDeeper.print((NewObjectAndConstructExpression) aExpression);
             theDeeper.writer.text(";");
+        } else if (aExpression instanceof PHIAssignmentExpression) {
+            final PHIAssignmentExpression thePHI = (PHIAssignmentExpression) aExpression;
+            final Variable v = allocator.variableAssignmentFor(thePHI.getPhi());
+            if (!v.isSynthetic()) {
+                startLine();
+
+                final Register r = allocator.registerAssignmentFor(v);
+                writer.text(toRegisterName(r));
+
+                writer.text("=");
+                print(thePHI.incomingDataFlows().get(0));
+                writer.text(";").newLine();
+            }
         } else {
             throw new IllegalStateException("Not implemented : " + aExpression);
         }

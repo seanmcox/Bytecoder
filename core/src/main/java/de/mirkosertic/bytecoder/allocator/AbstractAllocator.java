@@ -218,6 +218,9 @@ public abstract class AbstractAllocator {
                     aliases.put(v, theNewPhiVar);
                     theVariables.remove(v);
 
+                    // TODO: Fix this
+                    theNewPhiVar.liveRange().usedAt(0);
+
                     theNewPhiVar.liveRange().usedAt(v.liveRange().getDefinedAt());
                     theNewPhiVar.liveRange().usedAt(v.liveRange().getLastUsedAt());
                 }
